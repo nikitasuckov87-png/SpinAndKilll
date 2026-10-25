@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>Spin & Kill — Arena</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#172b1d;font-family:system-ui,Arial;touch-action:none;color:white}
+#game{display:block;width:100vw;height:100dvh}
+#hud{position:fixed;top:0;left:0;right:0;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;pointer-events:none;text-shadow:0 2px 5px #172313;font-weight:900}
+#brand{font-size:18px;letter-spacing:.5px}#stats{font-size:14px;background:#18311abf;padding:7px 11px;border:1px solid #c3e5a36b;border-radius:20px}
+#controls{position:fixed;bottom:22px;left:0;right:0;display:flex;justify-content:center;gap:12px;padding:0 16px}
+button{border:1px solid #fff7;color:white;font-weight:900;font-size:15px;padding:15px 17px;border-radius:18px;background:linear-gradient(#ffb63f,#f34b1e);box-shadow:0 5px 0 #9c321b,0 9px 20px #17231380;text-shadow:0 1px 2px #7b260d}
+#spin{flex:1;max-width:280px}#dash{background:linear-gradient(#8deeff,#168bd4);box-shadow:0 5px 0 #125a8b,0 9px 20px #17231380}
+#overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#08170bc9;padding:22px}
+.panel{max-width:370px;width:100%;padding:27px 22px;border-radius:27px;text-align:center;background:linear-gradient(145deg,#284e2b,#122b1d);border:2px solid #d2e8a6;box-shadow:0 20px 70px #0009}
+.panel h1{font-size:30px;line-height:1.05;margin:0 0 12px;color:#ffdb65;text-shadow:0 3px 0 #a84b1e}.panel p{line-height:1.5;color:#edf6e6}.panel button{width:100%;margin-top:10px}.tiny{font-size:12px;opacity:.8}
+</style></head><body>
+<canvas id="game"></canvas>
+<div id="hud"><div id="brand">⚔ SPIN & KILL · ULTRA</div><div id="stats">УРОВЕНЬ 1 · 0 очков · ♥♥♥ · smooth mode</div></div>
+<div id="controls"><button id="spin">🌀 ВРАЩАТЬ КЛИНКИ</button><button id="dash">⚡ РЫВОК</button></div>
+<div id="overlay"><div class="panel"><h1>SPIN & KILL</h1><p>Сражайся на арене, собирай светящиеся сферы и активируй восемь лезвий вокруг бойца!</p><p class="tiny">ULTRA-графика · разрешение экрана устройства · упрощённый рендер для плавной игры. Реальная частота зависит от экрана и мощности телефона.</p><p class="tiny">Веди пальцем по траве, чтобы двигаться. Нажми на вращение, когда враги рядом.</p><button id="start">НАЧАТЬ БОЙ</button></div></div>
+<script>
+(()=>{const c=document.querySelector('#game'),g=c.getContext('2d'),stats=document.querySelector('#stats'),overlay=document.querySelector('#overlay');let w,h,dpr,player,enemies=[],orbs=[],sparks=[],score=0,level=1,playing=false,spinT=0,dashT=0,spawn=0,last=0,aim={x:0,y:0},seed=91,frameCount=0,fps=0,fpsClock=0,bgCanvas,bgCtx,kills=0,boss=null,bossNotice=0;
+function rand(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}
+function makeBackground(){bgCanvas=document.createElement('canvas');bgCanvas.width=Math.max(1,Math.round(w));bgCanvas.height=Math.max(1,Math.round(h));bgCtx=bgCanvas.getContext('2d');let b=bgCtx,gr=b.createLinearGradient(0,0,w,h);gr.addColorStop(0,'#71984b');gr.addColorStop(.5,'#4e813c');gr.addColorStop(1,'#326d36');b.fillStyle=gr;b.fillRect(0,0,w,h);for(let i=0;i<180;i++){let x=(i*83+Math.sin(i*4)*13)%w,y=(i*137)%h;b.strokeStyle=i%3===0?'#d8e9a42e':'#173f2020';b.lineWidth=1;b.beginPath();b.moveTo(x,y);b.lineTo(x+3,y-5);b.stroke()}}
+function resize(){dpr=Math.min(devicePixelRatio||1,1.5);w=innerWidth;h=innerHeight;c.width=Math.round(w*dpr);c.height=Math.round(h*dpr);c.style.width=w+'px';c.style.height=h+'px';g.setTransform(dpr,0,0,dpr,0,0);makeBackground();if(player){player.x=Math.min(w-40,Math.max(40,player.x));player.y=Math.min(h-65,Math.max(100,player.y));}}
+addEventListener('resize',resize);resize();
+function reset(){score=0;level=1;enemies=[];orbs=[];sparks=[];spinT=0;dashT=0;spawn=.4;player={x:w*.5,y:h*.53,r:17,hp:3,speed:320,angle:0};aim={x:player.x,y:player.y};for(let i=0;i<6;i++)orb();hud()}
+function hud(){stats.textContent=`${boss?'БОСС · ':''}УРОВЕНЬ ${level} · ${score} очков · ${'♥'.repeat(Math.max(0,player.hp))}${'♡'.repeat(3-player.hp)}`}
+function orb(){orbs.push({x:35+rand()*(w-70),y:90+rand()*(h-190),r:9,p:rand()*6})}
+function enemy(){let a=rand()*Math.PI*2,edge=rand()<.5?w:h;let x=rand()*w,y=rand()<.5?85:h-100;if(rand()<.5){x=rand()<.5?-30:w+30;y=90+rand()*(h-190)}enemies.push({x,y,r:15+rand()*4,s:30+level*3,hp:1+Math.floor(level/4),phase:rand()*7})}
+function spawnBoss(){boss={x:w*.5,y:95,r:31,hp:18,maxHp:18,s:48+level*2,phase:0,hitFlash:0};bossNotice=2.2;aim={x:player.x,y:player.y};hud();spark(boss.x,boss.y,'#ff7a36',24)}
+function spark(x,y,color,n=6){for(let i=0;i<n;i++){let a=rand()*Math.PI*2,s=40+rand()*170;sparks.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,t:.25+rand()*.55,life:.8,color})}}
+function start(){reset();playing=true;overlay.style.display='none';last=performance.now();requestAnimationFrame(loop)}
+document.querySelector('#start').onclick=start;
+function move(e){if(!player)return;aim.x=e.clientX;aim.y=e.clientY}
+c.addEventListener('pointerdown',move);c.addEventListener('pointermove',e=>{if(e.buttons||e.pointerType==='touch')move(e)});
+document.querySelector('#spin').onclick=()=>{if(playing){spinT=1.65;spark(player.x,player.y,'#fff2a1',10)}};
+document.querySelector('#dash').onclick=()=>{if(playing){dashT=.28;let dx=aim.x-player.x,dy=aim.y-player.y,d=Math.hypot(dx,dy)||1;player.x+=dx/d*55;player.y+=dy/d*55;spark(player.x,player.y,'#9af5ff',7)}};
+function loop(t){if(!playing)return;let dt=Math.min(.025,(t-last)/1000);last=t;frameCount++;fpsClock+=dt;if(fpsClock>=.5){fps=Math.round(frameCount/fpsClock);frameCount=0;fpsClock=0;stats.textContent=`УРОВЕНЬ ${level} · ${score} очков · ${'♥'.repeat(Math.max(0,player.hp))}${'♡'.repeat(3-player.hp)} · ${fps} FPS`; }update(dt);draw(t/1000);requestAnimationFrame(loop)}
+function update(dt){spawn-=dt;if(spawn<=0&&!boss){enemy();spawn=Math.max(.42,1.15-level*.025)}spinT=Math.max(0,spinT-dt);dashT=Math.max(0,dashT-dt);
+let dx=aim.x-player.x,dy=aim.y-player.y,d=Math.hypot(dx,dy);if(d>5){player.angle=Math.atan2(dy,dx);let v=player.speed*(dashT>0?2.6:1);player.x+=dx/d*v*dt;player.y+=dy/d*v*dt}
+player.x=Math.max(27,Math.min(w-27,player.x));player.y=Math.max(80,Math.min(h-75,player.y));
+for(let i=enemies.length-1;i>=0;i--){let e=enemies[i],a=Math.atan2(player.y-e.y,player.x-e.x);e.x+=Math.cos(a)*e.s*dt;e.y+=Math.sin(a)*e.s*dt;e.phase+=dt*3;let dist=Math.hypot(e.x-player.x,e.y-player.y);
+if(spinT>0&&dist<76){e.hp-=dt*7;if(rand()<dt*10)spark(e.x,e.y,'#fff3a0',2);if(e.hp<=0){spark(e.x,e.y,'#ff8a39',8);enemies.splice(i,1);score+=10;kills++;if(score>0&&score%(50)===0){level++;orb()}if(kills>=5&&!boss){kills=0;spawnBoss()}hud();continue}}
+if(dist<e.r+player.r+3){enemies.splice(i,1);player.hp--;spark(player.x,player.y,'#ff4739',8);hud();if(player.hp<=0){finish();return}}}
+if(boss){let ba=Math.atan2(player.y-boss.y,player.x-boss.x),bd=Math.hypot(player.x-boss.x,player.y-boss.y);boss.phase+=dt*2.2;boss.hitFlash=Math.max(0,boss.hitFlash-dt);let bs=boss.s*(bd>95?1:.55);boss.x+=Math.cos(ba)*bs*dt;boss.y+=Math.sin(ba)*bs*dt;
+if(spinT>0&&bd<105){boss.hp-=dt*6.5;boss.hitFlash=.08;if(rand()<dt*12)spark(boss.x+(rand()-.5)*25,boss.y+(rand()-.5)*25,'#ffe88a',2);if(boss.hp<=0){spark(boss.x,boss.y,'#ff9d31',30);score+=100;level++;boss=null;bossNotice=1.5;for(let z=0;z<3;z++)orb();hud()}}
+if(boss&&Math.hypot(boss.x-player.x,boss.y-player.y)<boss.r+player.r+2){player.hp--;boss.x-=Math.cos(ba)*32;boss.y-=Math.sin(ba)*32;spark(player.x,player.y,'#ff4739',8);hud();if(player.hp<=0){finish();return}}}
+for(let i=orbs.length-1;i>=0;i--){let o=orbs[i];o.p+=dt*4;if(Math.hypot(o.x-player.x,o.y-player.y)<o.r+player.r+7){orbs.splice(i,1);score+=5;spark(o.x,o.y,'#9aff83',10);orb();hud()}}
+for(let i=sparks.length-1;i>=0;i--){let p=sparks[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=.97;p.vy*=.97;p.t-=dt;if(p.t<=0)sparks.splice(i,1)}}
+function blade(x,y,angle,scale=1,hot=false){g.save();g.translate(x,y);g.rotate(angle);g.scale(scale,scale);g.shadowColor=hot?'#ffb321':'#c8edff';g.shadowBlur=hot?7:2;
+let grad=g.createLinearGradient(-18,-22,20,22);grad.addColorStop(0,hot?'#fff7a3':'#ffffff');grad.addColorStop(.45,hot?'#ffbf31':'#cbd6e7');grad.addColorStop(1,hot?'#e94a13':'#687b9b');
+g.fillStyle=grad;g.strokeStyle=hot?'#a84412':'#596477';g.lineWidth=2;g.beginPath();g.moveTo(-9,-22);g.quadraticCurveTo(18,-27,20,-8);g.quadraticCurveTo(20,12,-7,23);g.quadraticCurveTo(4,5,-9,-22);g.closePath();g.fill();g.stroke();
+g.shadowBlur=0;g.strokeStyle=hot?'#fff6a6':'#ffffff';g.lineWidth=2;g.beginPath();g.moveTo(-5,-16);g.quadraticCurveTo(10,-15,12,-4);g.stroke();g.restore()}
+function fighter(x,y,scale,enemy=false,time=0){g.save();g.translate(x,y);g.scale(scale,scale);g.fillStyle='#1d351b66';g.beginPath();g.ellipse(0,22,24,8,0,0,Math.PI*2);g.fill();
+// legs
+g.strokeStyle=enemy?'#734a2c':'#a36c43';g.lineWidth=9;g.lineCap='round';g.beginPath();g.moveTo(-7,9);g.lineTo(-11,22);g.moveTo(7,9);g.lineTo(11,22);g.stroke();g.strokeStyle=enemy?'#e0a875':'#efbd8b';g.lineWidth=6;g.beginPath();g.moveTo(-11,22);g.lineTo(-17,22);g.moveTo(11,22);g.lineTo(17,22);g.stroke();
+// torso
+let skin=g.createLinearGradient(-18,-15,17,10);skin.addColorStop(0,enemy?'#d18d58':'#ffe0aa');skin.addColorStop(.5,enemy?'#f0b779':'#f5c48b');skin.addColorStop(1,enemy?'#9b603b':'#bc8052');g.fillStyle=skin;g.strokeStyle='#75492f';g.lineWidth=1.5;
+g.beginPath();g.moveTo(-12,-13);g.quadraticCurveTo(-17,-7,-13,4);g.lineTo(-8,12);g.quadraticCurveTo(0,17,8,12);g.lineTo(13,3);g.quadraticCurveTo(17,-8,11,-13);g.quadraticCurveTo(0,-18,-12,-13);g.fill();g.stroke();
+// arms
+g.lineWidth=7;g.strokeStyle=skin;g.beginPath();g.moveTo(-11,-10);g.quadraticCurveTo(-21,-11,-19,-1);g.lineTo(-15,5);g.moveTo(11,-10);g.quadraticCurveTo(21,-11,19,-1);g.lineTo(15,5);g.stroke();
+// abs details
+g.strokeStyle='#9d6847';g.lineWidth=1;g.beginPath();g.moveTo(0,-5);g.lineTo(0,10);g.moveTo(-7,-2);g.lineTo(-1,0);g.lineTo(-1,4);g.moveTo(7,-2);g.lineTo(1,0);g.lineTo(1,4);g.moveTo(-6,6);g.lineTo(-1,7);g.moveTo(6,6);g.lineTo(1,7);g.stroke();
+// head and hair
+g.fillStyle=skin;g.beginPath();g.ellipse(0,-20,8,9,0,0,Math.PI*2);g.fill();g.stroke();
+g.fillStyle=enemy?'#513b29':'#f0f0e9';g.beginPath();g.moveTo(-8,-21);g.quadraticCurveTo(-11,-34,0,-32);g.quadraticCurveTo(10,-34,8,-21);g.lineTo(4,-25);g.lineTo(1,-20);g.lineTo(-2,-25);g.lineTo(-6,-20);g.fill();
+g.fillStyle='#2b211b';g.beginPath();g.arc(-3,-20,1,0,7);g.arc(3,-20,1,0,7);g.fill();g.strokeStyle='#74482d';g.beginPath();g.moveTo(-3,-16);g.lineTo(3,-16);g.stroke();g.restore()}
+function draw(t){g.clearRect(0,0,w,h);if(bgCanvas)g.drawImage(bgCanvas,0,0,w,h);else{g.fillStyle='#4e813c';g.fillRect(0,0,w,h)}
+// textured grass strokes
+for(let i=0;i<180;i++){let x=(i*83+Math.sin(i*4)*13)%w,y=(i*137)%h;g.strokeStyle=i%3===0?'#d8e9a43a':'#173f202a';g.lineWidth=1;g.beginPath();g.moveTo(x,y);g.lineTo(x+4,y-7);g.stroke()}
+orbs.forEach(o=>{let r=o.r+Math.sin(o.p)*1.5;g.save();g.shadowColor='#a6ff6d';g.shadowBlur=7;let gr=g.createRadialGradient(o.x-3,o.y-4,1,o.x,o.y,r+4);gr.addColorStop(0,'#f6ffb0');gr.addColorStop(.5,'#b4fa55');gr.addColorStop(1,'#5caa2c');g.fillStyle=gr;g.beginPath();g.arc(o.x,o.y,r+4,0,7);g.fill();g.restore();g.strokeStyle='#fff6a6';g.lineWidth=2;g.beginPath();g.arc(o.x,o.y,r,0,7);g.stroke()});
+enemies.forEach(e=>{g.save();if(spinT>0&&Math.hypot(e.x-player.x,e.y-player.y)<80){for(let j=0;j<8;j++)blade(e.x+Math.cos(j*Math.PI/4)*31,e.y+Math.sin(j*Math.PI/4)*31,j*Math.PI/4,.65,true)}fighter(e.x,e.y,1.03,true,e.phase);g.restore()});
+if(boss){g.save();g.shadowColor='#ff3e1f';g.shadowBlur=boss.hitFlash>0?18:8;g.fillStyle=boss.hitFlash>0?'#fff0a1':'#7e2928';g.strokeStyle='#ffc15b';g.lineWidth=3;g.beginPath();g.arc(boss.x,boss.y,boss.r+5+Math.sin(t*5)*2,0,Math.PI*2);g.fill();g.stroke();g.shadowBlur=0;
+// horn details
+g.fillStyle='#e8d7b0';g.beginPath();g.moveTo(boss.x-19,boss.y-22);g.lineTo(boss.x-32,boss.y-42);g.lineTo(boss.x-8,boss.y-29);g.moveTo(boss.x+19,boss.y-22);g.lineTo(boss.x+32,boss.y-42);g.lineTo(boss.x+8,boss.y-29);g.fill();
+fighter(boss.x,boss.y,1.75,true,boss.phase);
+let bw=100,bx=boss.x-bw/2,by=boss.y-boss.r-30;g.fillStyle='#301b1b';g.fillRect(bx,by,bw,8);g.fillStyle='#ff4b35';g.fillRect(bx,by,bw*Math.max(0,boss.hp/boss.maxHp),8);g.strokeStyle='#ffe0a1';g.lineWidth=1;g.strokeRect(bx,by,bw,8);g.fillStyle='#fff';g.font='900 12px system-ui';g.textAlign='center';g.fillText('БОСС',boss.x,by-5);g.textAlign='left';g.restore()}
+if(bossNotice>0){bossNotice-=.016;g.save();g.textAlign='center';g.font='1000 26px system-ui';g.lineWidth=5;g.strokeStyle='#542016';g.strokeText(boss?'БОСС ПРИШЁЛ!':'БОСС ПОБЕЖДЁН!',w/2,h*.22);g.fillStyle=boss?'#ffcf5b':'#aaff8c';g.fillText(boss?'БОСС ПРИШЁЛ!':'БОСС ПОБЕЖДЁН!',w/2,h*.22);g.restore()}
+if(spinT>0){g.save();g.globalAlpha=.35;g.strokeStyle='#fff5ba';g.lineWidth=3;g.beginPath();g.arc(player.x,player.y,65,0,Math.PI*2);g.stroke();g.restore()}
+for(let i=0;i<8;i++){let a=t*9+i*Math.PI/4;let radius=spinT>0?55:37;blade(player.x+Math.cos(a)*radius,player.y+Math.sin(a)*radius,a+Math.PI/2,spinT>0?1.04:.78,spinT>0)}
+fighter(player.x,player.y,1.25,false,t);
+sparks.forEach(p=>{g.globalAlpha=Math.max(0,p.t/p.life);g.fillStyle=p.color;g.shadowColor=p.color;g.shadowBlur=2;g.beginPath();g.arc(p.x,p.y,2.5+2*p.t,0,7);g.fill();g.globalAlpha=1;g.shadowBlur=0});
+g.fillStyle='#fff';g.font='900 13px system-ui';g.shadowColor='#1b371b';g.shadowBlur=1;g.fillText(spinT>0?'✦ КЛИНКИ АКТИВНЫ!':'СОБИРАЙ СФЕРЫ И ВЫЖИВАЙ',14,76);g.shadowBlur=0;
+}
+function finish(){playing=false;overlay.style.display='flex';overlay.querySelector('h1').textContent='БОЙ ОКОНЧЕН';overlay.querySelector('p').textContent=`Ты набрал ${score} очков и дошёл до ${level} уровня. Попробуй ещё раз!`;document.querySelector('#start').textContent='РЕВАНШ'}
+})();
+</script></body></html>
